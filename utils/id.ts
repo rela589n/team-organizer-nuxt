@@ -5,8 +5,8 @@ export function newId(): string {
     if (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') {
       return globalThis.crypto.randomUUID()
     }
-  } catch (_) {
-    // ignore and use fallback
+  } catch (err) {
+    console.warn('crypto.randomUUID access failed; using fallback id generation:', err)
   }
   return (
     Date.now().toString(36) + Math.random().toString(36).slice(2)

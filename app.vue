@@ -7,6 +7,8 @@
         <div class="flex items-center gap-4">
           <NuxtLink to="/" class="text-gray-600 hover:text-gray-900">Home</NuxtLink>
           <NuxtLink to="/people" class="text-gray-600 hover:text-gray-900">People</NuxtLink>
+          <NuxtLink to="/teams" class="text-gray-600 hover:text-gray-900">Teams</NuxtLink>
+          <NuxtLink to="/organize" class="text-gray-600 hover:text-gray-900">Organize</NuxtLink>
         </div>
       </nav>
     </header>
