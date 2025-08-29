@@ -16,7 +16,7 @@ const people = ref<Person[]>([])
 function normalizePerson(input: any): Person {
   return {
     id: String(input?.id ?? newId()),
-    name: String(input?.name ?? '').trim(),
+    name: String(input?.name ?? ''),
   }
 }
 
@@ -42,7 +42,8 @@ export function usePeople() {
   }
 
   function add(name?: string) {
-    const finalName = (name ?? '').trim() || nextDefaultName()
+    const provided = name ?? ''
+    const finalName = provided === '' ? nextDefaultName() : provided
     const id = newId()
     people.value.push({ id, name: finalName })
     return id
@@ -51,7 +52,7 @@ export function usePeople() {
   function update(id: string, name: string) {
     const idx = people.value.findIndex(p => p.id === id)
     if (idx !== -1) {
-      people.value[idx] = { id, name: name.trim() }
+      people.value[idx] = { id, name }
     }
   }
 

@@ -60,9 +60,11 @@ export function useTeams() {
 
   /** Add a team with optional name and color, applying sensible defaults. */
   function add(name?: string, color?: string) {
+    const provided = name ?? ''
+    const finalName = provided === '' ? nextDefaultName() : provided
     const t: Team = {
       id: newId(),
-      name: (name ?? nextDefaultName()).trim() || nextDefaultName(),
+      name: finalName,
       color: color ?? nextDefaultColor(),
       members: [],
     }
@@ -78,7 +80,7 @@ export function useTeams() {
       const next: Team = {
         ...current,
         ...patch,
-        name: patch.name !== undefined ? patch.name.trim() : current.name,
+        name: patch.name !== undefined ? patch.name : current.name,
         members: patch.members !== undefined ? [...patch.members] : current.members ?? [],
       }
       if (patch.color !== undefined) {

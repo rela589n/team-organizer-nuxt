@@ -2,8 +2,10 @@
 import { computed, ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useTeams, type Team } from '~/composables/useTeams'
 import { TEAM_COLORS } from '~/utils/colors'
+import { useI18n } from '~/composables/useI18n'
 
-useHead({ title: 'Teams — Team Organizer' })
+const { t: tt } = useI18n()
+useHead({ title: `${tt('nav_teams')} — ${tt('app_title')}` })
 
 const { teams, count, add, update, remove } = useTeams()
 
@@ -26,7 +28,7 @@ function updateColor(team: Team, color: string) {
 }
 
 function removeTeam(team: Team) {
-  const ok = confirm(`Are you sure you want to remove team "${team.name}"? This action cannot be undone.`)
+  const ok = confirm(tt('confirm_remove_team', { name: team.name }))
   if (ok) {
     remove(team.id)
   }
@@ -85,17 +87,17 @@ onBeforeUnmount(() => {
   window.removeEventListener('click', handleWindowClick)
 })
 
-const emptyStateHint = computed(() => `No teams yet. Click \"Add Team\" to create Team #${count.value + 1}.`) 
+const emptyStateHint = computed(() => tt('teams_no_teams_hint', { n: String(count.value + 1) })) 
 </script>
 
 <template>
   <section class="space-y-6">
     <div class="flex items-end justify-between gap-4">
       <div>
-        <h1 class="text-2xl font-semibold">Teams</h1>
-        <p class="text-gray-600">Create and manage teams.</p>
+        <h1 class="text-2xl font-semibold">{{ tt('teams_title') }}</h1>
+        <p class="text-gray-600">{{ tt('teams_desc') }}</p>
       </div>
-      <div class="text-sm text-gray-600">Total: <span class="font-medium text-gray-900">{{ count }}</span></div>
+      <div class="text-sm text-gray-600">{{ tt('teams_total') }}: <span class="font-medium text-gray-900">{{ count }}</span></div>
     </div>
 
     <div class="rounded-lg border bg-white">
@@ -106,13 +108,13 @@ const emptyStateHint = computed(() => `No teams yet. Click \"Add Team\" to creat
           <div class="flex items-center gap-3 md:gap-6 w-full">
             <div class="w-8 text-gray-500 tabular-nums text-right select-none">{{ idx + 1 }}.</div>
             <div class="min-w-0 flex-1">
-              <label class="block text-sm font-medium text-gray-700">Name</label>
+              <label class="block text-sm font-medium text-gray-700">{{ tt('teams_name') }}</label>
               <input :value="t.name" @input="updateName(t, ($event.target as HTMLInputElement).value)" :data-team-id="t.id" type="text" class="mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
             </div>
           </div>
           <div class="flex items-center gap-6">
             <div class="min-w-[12rem]">
-              <label class="block text-sm font-medium text-gray-700">Color</label>
+              <label class="block text-sm font-medium text-gray-700">{{ tt('teams_color') }}</label>
               <div class="relative mt-1 inline-block">
                 <button
                   type="button"
@@ -151,7 +153,7 @@ const emptyStateHint = computed(() => `No teams yet. Click \"Add Team\" to creat
                       <span class="relative inline-flex h-4 w-8 items-center justify-center border bg-white">
                         <svg class="h-3 w-3 text-gray-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4 10a1 1 0 011-1h10a1 1 0 110 2H5a1 1 0 01-1-1z" clip-rule="evenodd"/></svg>
                       </span>
-                      <span class="text-sm text-gray-700">No color</span>
+                      <span class="text-sm text-gray-700">{{ tt('teams_no_color') }}</span>
                     </button>
                     <button
                       v-for="c in TEAM_COLORS"
@@ -170,7 +172,7 @@ const emptyStateHint = computed(() => `No teams yet. Click \"Add Team\" to creat
                 </div>
               </div>
             </div>
-            <button @click="removeTeam(t)" title="Remove team" class="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700">Remove</button>
+            <button @click="removeTeam(t)" :title="tt('teams_remove')" class="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700">{{ tt('teams_remove') }}</button>
           </div>
         </li>
       </ul>
@@ -178,7 +180,7 @@ const emptyStateHint = computed(() => `No teams yet. Click \"Add Team\" to creat
     </div>
 
     <div class="flex items-center justify-between gap-4 mt-4">
-      <button @click="addTeam" class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">Add Team</button>
+      <button @click="addTeam" class="inline-flex items-center gap-2 rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700">{{ tt('teams_add') }}</button>
     </div>
   </section>
 </template>
