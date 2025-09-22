@@ -105,5 +105,19 @@ export function useTeams() {
     teams.value = teams.value.map(t => ({ ...t, members: [] }))
   }
 
-  return { teams, count, add, update, remove, clearAllMembers, TEAM_COLORS }
+  /** Remove a member id from all teams' member lists. */
+  function removeMemberEverywhere(personId: string) {
+    let changed = false
+    teams.value = teams.value.map(t => {
+      const members = Array.isArray(t.members) ? t.members : []
+      if (members.includes(personId)) {
+        changed = true
+        return { ...t, members: members.filter(id => id !== personId) }
+      }
+      return t
+    })
+    return changed
+  }
+
+  return { teams, count, add, update, remove, clearAllMembers, removeMemberEverywhere, TEAM_COLORS }
 }

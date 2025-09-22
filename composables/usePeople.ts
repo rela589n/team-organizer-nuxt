@@ -1,6 +1,7 @@
 import { ref, computed, onMounted, watch } from 'vue'
 import { newId } from '~/utils/id'
 import { loadState, saveState } from '~/utils/storage'
+import { useTeams } from '~/composables/useTeams'
 
 export interface Person {
   id: string
@@ -62,7 +63,16 @@ export function usePeople() {
   }
 
   function remove(id: string) {
+    // First remove person from the people list
     people.value = people.value.filter(p => p.id !== id)
+    // Also remove references from all teams so UI won't show "Unknown"
+    try {
+      const { removeMemberEverywhere } = useTeams()
+      removeMemberEverywhere(id)
+    } catch (e) {
+      // In case useTeams isn't available for some reason, fail silently
+      console.warn('Failed to remove member from teams on person delete:', e)
+    }
   }
 
   return { people, count, add, update, remove }
