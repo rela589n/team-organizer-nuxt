@@ -19,8 +19,8 @@ function addPerson() {
   })
 }
 
-function updatePerson(id: string, name: string) {
-  update(id, name)
+function updatePerson(id: string, name: string, power: number) {
+  update(id, name, power)
 }
 
 function removePerson(id: string) {

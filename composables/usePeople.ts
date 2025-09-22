@@ -5,6 +5,7 @@ import { loadState, saveState } from '~/utils/storage'
 export interface Person {
   id: string
   name: string
+  power: number
 }
 
 const STORAGE_KEY = 'team-organizer:people'
@@ -17,6 +18,7 @@ function normalizePerson(input: any): Person {
   return {
     id: String(input?.id ?? newId()),
     name: String(input?.name ?? ''),
+    power: Number.isFinite(Number(input?.power)) ? Math.max(1, Math.floor(Number(input.power))) : 1,
   }
 }
 
@@ -41,18 +43,21 @@ export function usePeople() {
     return `Person #${people.value.length + 1}`
   }
 
-  function add(name?: string) {
+  function add(name?: string, power: number = 1) {
     const provided = name ?? ''
     const finalName = provided === '' ? nextDefaultName() : provided
     const id = newId()
-    people.value.push({ id, name: finalName })
+    const p = Number.isFinite(Number(power)) ? Math.max(1, Math.floor(Number(power))) : 1
+    people.value.push({ id, name: finalName, power: p })
     return id
   }
 
-  function update(id: string, name: string) {
+  function update(id: string, name: string, power?: number) {
     const idx = people.value.findIndex(p => p.id === id)
     if (idx !== -1) {
-      people.value[idx] = { id, name }
+      const prev = people.value[idx]
+      const p = (power === undefined) ? prev.power : (Number.isFinite(Number(power)) ? Math.max(1, Math.floor(Number(power))) : 1)
+      people.value[idx] = { id, name, power: p }
     }
   }
 

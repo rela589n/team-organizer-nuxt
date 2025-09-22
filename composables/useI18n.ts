@@ -28,6 +28,7 @@ const catalog: Catalog = {
     people_add: 'Add Person',
     people_remove_confirm: 'Are you sure you want to remove person{label}? This action cannot be undone.',
     people_field_name: 'Name',
+        people_field_power: 'Power',
 
     teams_title: 'Teams',
     teams_desc: 'Create and manage teams.',
@@ -46,6 +47,7 @@ const catalog: Catalog = {
     organize_press_start: 'Press Start to begin',
     organize_add_first: 'Add people and teams first',
     organize_members: 'member(s)',
+        organize_power: 'power',
     organize_awaiting: 'Awaiting members…',
     organize_start: 'Start',
     organize_pause: 'Pause',
@@ -75,6 +77,7 @@ const catalog: Catalog = {
     people_add: 'Додати людину',
     people_remove_confirm: 'Ви впевнені, що хочете видалити людину{label}? Дію неможливо скасувати.',
     people_field_name: 'Імʼя',
+        people_field_power: 'Сила',
 
     teams_title: 'Команди',
     teams_desc: 'Створюйте та керуйте командами.',
@@ -93,6 +96,7 @@ const catalog: Catalog = {
     organize_press_start: 'Натисніть «Почати», щоб розпочати',
     organize_add_first: 'Спочатку додайте людей і команди',
     organize_members: 'учасників',
+        organize_power: 'сила',
     organize_awaiting: 'Очікування учасників…',
     organize_start: 'Почати',
     organize_pause: 'Пауза',

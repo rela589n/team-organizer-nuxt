@@ -155,6 +155,15 @@ async function updateStageOrigin() {
 
 // Derived helpers
 const teamsMap = computed<Record<string, Team>>(() => Object.fromEntries(teams.value.map(t => [t.id, t])))
+const peopleMap = computed<Record<string, Person>>(() => Object.fromEntries(people.value.map(p => [p.id, p])))
+function teamPowerSum(t: Team): number {
+  const ids = Array.isArray(t.members) ? t.members : []
+  return ids.reduce((sum, pid) => {
+    const p = peopleMap.value[pid]
+    const pw = Number.isFinite(Number(p?.power)) ? Math.max(1, Math.floor(Number(p?.power))) : 1
+    return sum + pw
+  }, 0)
+}
 
 // Adaptive layout helpers to reduce empty space for small team counts
 const gridMinHClass = computed(() => {
@@ -192,16 +201,10 @@ const aroundPositions = computed(() => {
   return ring.slice(0, n)
 })
 
+// Not used anymore for power-based balancing, kept for potential UI hints
 const balancedTarget = computed(() => {
-  const t = teams.value.length
-  const p = people.value.length
+  // Legacy count-based target (unused)
   const res: Record<string, number> = {}
-  if (t === 0) return res
-  const base = Math.floor(p / t)
-  const remainder = p % t
-  teams.value.forEach((team, idx) => {
-    res[team.id] = base + (idx < remainder ? 1 : 0)
-  })
   return res
 })
 
@@ -240,7 +243,6 @@ function buildQueue() {
   // reset
   queue.value = []
   currentIdx.value = -1
-  const target = balancedTarget.value
   if (!teams.value.length) return
 
   // helper to shuffle arrays in-place (Fisher–Yates)
@@ -254,21 +256,20 @@ function buildQueue() {
     return arr
   }
 
-  // Build a list of teamIds repeated by their target counts, then shuffle.
-  const assignmentPool: string[] = []
-  for (const t of teams.value) {
-    const c = target[t.id] ?? 0
-    for (let i = 0; i < c; i++) assignmentPool.push(t.id)
-  }
-  shuffle(assignmentPool)
+  // Greedy power balancing: assign highest-power people first to the team with lowest current total power
+  const persons = [...people.value].sort((a, b) => (b.power ?? 1) - (a.power ?? 1))
+  const totals: Record<string, number> = {}
+  for (const t of teams.value) totals[t.id] = 0
 
-  // Randomize people order
-  const persons = shuffle([...people.value])
-
-  // Pair each person with the next teamId from assignmentPool
-  for (let i = 0; i < persons.length; i++) {
-    const teamId = assignmentPool[i % assignmentPool.length] || teams.value[i % teams.value.length]?.id
-    queue.value.push({ person: persons[i], teamId })
+  for (const person of persons) {
+    // among teams, pick id with minimal total; tie-breaker by random or by fewer members assigned so far
+    const minTotal = Math.min(...Object.values(totals))
+    const candidateIds = Object.keys(totals).filter(id => totals[id] === minTotal)
+    const pickId = candidateIds[Math.floor(Math.random() * candidateIds.length)] || teams.value[0]?.id
+    const chosenId = pickId || ''
+    if (!chosenId) continue
+    queue.value.push({ person, teamId: chosenId })
+    totals[chosenId] += (Number.isFinite(Number(person.power)) ? Math.max(1, Math.floor(Number(person.power))) : 1)
   }
 }
 
@@ -598,7 +599,7 @@ function setStagingEl(el: HTMLElement | null) {
       <div v-for="t in teams" :key="t.id" class="rounded-xl border overflow-hidden transition-all flex flex-col h-full" :style="{ borderColor: t.color, boxShadow: (highlightTeamId === t.id) ? `0 0 0 4px ${t.color}` : undefined }">
         <div class="flex items-center justify-between gap-3 p-4" :style="{ backgroundColor: t.color, color: '#fff' }">
           <h2 class="font-semibold truncate">{{ t.name }}</h2>
-          <div class="text-xs opacity-80">{{ (t.members?.length ?? 0) }} {{ tt('organize_members') }}</div>
+          <div class="text-xs opacity-80">{{ tt('organize_power') || 'power' }}: {{ teamPowerSum(t) }}</div>
         </div>
         <div
           class="p-4 flex-1"
