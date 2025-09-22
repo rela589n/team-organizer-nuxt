@@ -16,7 +16,7 @@ const { t: tt, locale, setLocale, availableLocales } = useI18n()
           <NuxtLink to="/organize" class="text-gray-600 hover:text-gray-900">{{ tt('nav_organize') }}</NuxtLink>
           <div class="flex items-center gap-2">
             <label for="lang" class="sr-only">Language</label>
-            <select id="lang" :value="locale" @change="setLocale(($event.target as HTMLSelectElement).value as any)" class="rounded-md border-gray-300 text-sm bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 shadow-none">
+            <select id="lang" v-model="(locale as any)" @change="setLocale(($event.target as HTMLSelectElement).value as any)" class="rounded-md border-gray-300 text-sm bg-white px-3 py-2 text-gray-700 focus:border-blue-500 focus:ring-blue-500 shadow-none">
               <option v-for="opt in availableLocales" :key="opt.code" :value="opt.code">{{ opt.label }}</option>
             </select>
           </div>
