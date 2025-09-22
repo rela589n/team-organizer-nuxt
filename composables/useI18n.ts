@@ -120,10 +120,16 @@ function initI18nOnce() {
     try {
       const stored = localStorage.getItem(STORAGE_KEY) as Locale | null
       if (stored && (stored === 'en' || stored === 'uk')) locale.value = stored
-    } catch {}
+    } catch (e) {
+      console.warn('useI18n: failed to read locale from localStorage', e)
+    }
   }
   watch(locale, (val) => {
-    try { localStorage.setItem(STORAGE_KEY, val) } catch {}
+    try {
+      localStorage.setItem(STORAGE_KEY, val)
+    } catch (e) {
+      console.warn('useI18n: failed to write locale to localStorage', e)
+    }
   })
 }
 

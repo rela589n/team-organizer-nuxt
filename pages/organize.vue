@@ -1,16 +1,22 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch, nextTick } from 'vue'
-import { usePeople, type Person } from '~/composables/usePeople'
-import { useTeams, type Team } from '~/composables/useTeams'
-import { colorTint } from '~/utils/colors'
-import { useConfetti } from '~/composables/useConfetti'
-import { useI18n } from '~/composables/useI18n'
+import {computed, nextTick, onMounted, ref, watch} from 'vue'
+import {type Person, usePeople} from '~/composables/usePeople'
+import {type Team, useTeams} from '~/composables/useTeams'
+import { makeIndexMap } from '~/utils/collection'
+import {useConfetti} from '~/composables/useConfetti'
+import {useI18n} from '~/composables/useI18n'
+import SpeedControl from '~/components/common/SpeedControl.vue'
+import TeamCard from '~/components/teams/TeamCard.vue'
+import QueueDisplay from '~/components/organize/QueueDisplay.vue'
+import { useDragDrop } from '~/composables/useDragDrop'
+import { dur as durUtil, speedText as speedTextUtil } from '~/utils/animation'
+import { makeAssignmentQueue } from '~/utils/assignments'
 
 const { t: tt } = useI18n()
 useHead({ title: `${tt('nav_organize')} — ${tt('app_title')}` })
 
 const { people } = usePeople()
-const { teams, update, clearAllMembers, TEAM_COLORS } = useTeams()
+const { teams, update, clearAllMembers, TEAM_COLORS, moveMemberBetweenTeams } = useTeams()
 
 // Animation and control state
 const running = ref(false)
@@ -24,25 +30,19 @@ let runEpoch = 0
 
 // Duration helper scaled by speed (higher speed => shorter duration)
 function dur(base: number): number {
-  const s = Math.min(2, Math.max(0.5, Number(speed.value) || 1))
-  return Math.round(base / s)
+  return durUtil(base, Number(speed.value) || 1)
 }
 
-const speedText = computed(() => {
-  const s = Math.min(2, Math.max(0.5, Number(speed.value) || 1))
-  return `${s.toFixed(2)}x`
-})
+const speedText = computed(() => speedTextUtil(Number(speed.value) || 1))
 
 // Two-phase step control
 const stagedIdx = ref<number | null>(null) // person currently staged (appearing/moving)
 const appearing = ref(false)
 
-// Visual feedback state
-const highlightTeamId = ref<string | null>(null)
+// Visual feedback state is managed by useDragDrop
 
 // Refs to coordinate fly animation
 const stagingEl = ref<HTMLElement | null>(null)
-const stagingAvatarEl = ref<HTMLElement | null>(null)
 const dropAreas = new Map<string, HTMLElement>()
 // Queue UX: when the first item is moving, keep a placeholder so the row doesn't squash
 const movingFirst = ref(false)
@@ -51,96 +51,24 @@ function setDropArea(teamId: string, el: HTMLElement | null) {
   else dropAreas.delete(teamId)
 }
 
-// --- Manual drag-and-drop state and helpers ---
-const draggingPid = ref<string | null>(null)
-const draggingFromTeamId = ref<string | null>(null)
-const overTeamId = ref<string | null>(null)
-// Track nested dragenter/leaves per team to avoid flicker when moving over children
-const overCounts = ref<Record<string, number>>({})
-function isOverTeam(teamId: string) {
-  return (overCounts.value[teamId] || 0) > 0
-}
-
+// --- Manual drag-and-drop state and helpers (moved into composable) ---
 function movePerson(pid: string, fromTeamId: string, toTeamId: string) {
-  if (fromTeamId === toTeamId) return
-  const fromTeam = teamsMap.value[fromTeamId]
-  const toTeam = teamsMap.value[toTeamId]
-  if (!fromTeam || !toTeam) return
-  const fromMembers = Array.isArray(fromTeam.members) ? [...fromTeam.members] : []
-  const toMembers = Array.isArray(toTeam.members) ? [...toTeam.members] : []
-  const idx = fromMembers.indexOf(pid)
-  if (idx !== -1) fromMembers.splice(idx, 1)
-  if (!toMembers.includes(pid)) toMembers.push(pid)
-  // Persist both teams
-  update(fromTeam.id, { members: fromMembers })
-  update(toTeam.id, { members: toMembers })
+  moveMemberBetweenTeams(pid, fromTeamId, toTeamId)
 }
 
-function handleDragStartMember(ev: DragEvent, pid: string, teamId: string) {
-  draggingPid.value = pid
-  draggingFromTeamId.value = teamId
-  try {
-    ev.dataTransfer?.setData('text/plain', JSON.stringify({ pid, fromTeamId: teamId }))
-  } catch {}
-  if (ev.dataTransfer) ev.dataTransfer.effectAllowed = 'move'
-}
-
-function handleDragEndMember() {
-  draggingPid.value = null
-  draggingFromTeamId.value = null
-  overCounts.value = {}
-  overTeamId.value = null
-  highlightTeamId.value = null
-}
-
-function handleDragOverTeam(ev: DragEvent) {
-  if (draggingPid.value) {
-    ev.preventDefault() // allow drop
-    if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move'
-  }
-}
-
-function handleDragEnterTeam(ev: DragEvent, teamId: string) {
-  if (!draggingPid.value) return
-  // Increment nested enter counter to keep outline while inside children
-  overCounts.value[teamId] = (overCounts.value[teamId] || 0) + 1
-  overTeamId.value = teamId
-  highlightTeamId.value = teamId
-}
-
-function handleDragLeaveTeam(ev: DragEvent, teamId: string) {
-  // Decrement and clear only when fully left the drop area (not into a child)
-  if (!draggingPid.value) return
-  const cur = (overCounts.value[teamId] || 0) - 1
-  overCounts.value[teamId] = Math.max(0, cur)
-  if (overCounts.value[teamId] === 0 && overTeamId.value === teamId) {
-    overTeamId.value = null
-    highlightTeamId.value = null
-  }
-}
-
-function handleDropTeam(ev: DragEvent, toTeamId: string) {
-  ev.preventDefault()
-  let pid = draggingPid.value
-  let fromTeamId = draggingFromTeamId.value
-  try {
-    const raw = ev.dataTransfer?.getData('text/plain')
-    if (raw) {
-      const parsed = JSON.parse(raw)
-      pid = String(parsed?.pid ?? pid)
-      fromTeamId = String(parsed?.fromTeamId ?? fromTeamId)
-    }
-  } catch {}
-  if (pid && fromTeamId && toTeamId && fromTeamId !== toTeamId) {
-    movePerson(pid, fromTeamId, toTeamId)
-  }
-  // Clear all hover counters on drop
-  overCounts.value = {}
-  overTeamId.value = null
-  highlightTeamId.value = null
-  draggingPid.value = null
-  draggingFromTeamId.value = null
-}
+// DnD handlers are now provided by useDragDrop
+const {
+  draggingPid,
+  draggingFromTeamId,
+  highlightTeamId,
+  isOverTeam,
+  handleDragStartMember,
+  handleDragEndMember,
+  handleDragOverTeam,
+  handleDragEnterTeam,
+  handleDragLeaveTeam,
+  handleDropTeam,
+} = useDragDrop(movePerson)
 
 // Track last known center of the staging avatar to start confetti there
 const lastStageOrigin = ref<{ x: number, y: number } | null>(null)
@@ -154,59 +82,18 @@ async function updateStageOrigin() {
 }
 
 // Derived helpers
-const teamsMap = computed<Record<string, Team>>(() => Object.fromEntries(teams.value.map(t => [t.id, t])))
-const peopleMap = computed<Record<string, Person>>(() => Object.fromEntries(people.value.map(p => [p.id, p])))
+const teamsMap = computed<Record<string, Team>>(() => makeIndexMap(teams.value))
+const peopleMap = computed<Record<string, Person>>(() => makeIndexMap(people.value))
 function teamPowerSum(t: Team): number {
-  const ids = Array.isArray(t.members) ? t.members : []
-  return ids.reduce((sum, pid) => {
+  return t.members.reduce((sum, pid) => {
     const p = peopleMap.value[pid]
-    const pw = Number.isFinite(Number(p?.power)) ? Math.max(1, Math.floor(Number(p?.power))) : 1
-    return sum + pw
+    if (!p) throw new Error(`teamPowerSum: unknown person id ${pid}`)
+    return sum + p.power
   }, 0)
 }
 
-// Adaptive layout helpers to reduce empty space for small team counts
-const gridMinHClass = computed(() => {
-  const n = teams.value.length
-  if (n <= 3) return 'min-h-[42vh]'
-  if (n === 4) return 'min-h-[52vh]'
-  return 'min-h-[70vh]'
-})
-const gridGapClass = computed(() => {
-  const n = teams.value.length
-  if (n <= 3) return 'gap-2'
-  if (n === 4) return 'gap-3'
-  return 'gap-4'
-})
 
-// Positions for up to 8 teams arranged around the center, adapted to count
-const aroundPositions = computed(() => {
-  const n = Math.min(teams.value.length, 8)
-  // Default 8-position clockwise ring starting at top-center
-  const ring = [
-    { r: 1, c: 2 }, // top
-    { r: 1, c: 3 }, // top-right
-    { r: 2, c: 3 }, // right
-    { r: 3, c: 3 }, // bottom-right
-    { r: 3, c: 2 }, // bottom
-    { r: 3, c: 1 }, // bottom-left
-    { r: 2, c: 1 }, // left
-    { r: 1, c: 1 }, // top-left
-  ]
-  if (n <= 0) return [] as { r: number, c: number }[]
-  if (n === 1) return [ { r: 1, c: 2 } ]
-  if (n === 2) return [ { r: 2, c: 1 }, { r: 2, c: 3 } ] // left, right
-  if (n === 3) return [ { r: 1, c: 2 }, { r: 2, c: 1 }, { r: 2, c: 3 } ] // top, left, right
-  if (n === 4) return [ { r: 1, c: 2 }, { r: 2, c: 3 }, { r: 3, c: 2 }, { r: 2, c: 1 } ] // top, right, bottom, left
-  return ring.slice(0, n)
-})
 
-// Not used anymore for power-based balancing, kept for potential UI hints
-const balancedTarget = computed(() => {
-  // Legacy count-based target (unused)
-  const res: Record<string, number> = {}
-  return res
-})
 
 const canStart = computed(() => people.value.length > 0 && teams.value.length > 0)
 const finished = computed(() => currentIdx.value >= 0 && currentIdx.value >= queue.value.length)
@@ -241,36 +128,9 @@ watch(finished, (val) => {
 
 function buildQueue() {
   // reset
-  queue.value = []
   currentIdx.value = -1
-  if (!teams.value.length) return
-
-  // helper to shuffle arrays in-place (Fisher–Yates)
-  function shuffle<T>(arr: T[]): T[] {
-    for (let i = arr.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1))
-      const tmp = arr[i]
-      arr[i] = arr[j]
-      arr[j] = tmp
-    }
-    return arr
-  }
-
-  // Greedy power balancing: assign highest-power people first to the team with lowest current total power
-  const persons = [...people.value].sort((a, b) => (b.power ?? 1) - (a.power ?? 1))
-  const totals: Record<string, number> = {}
-  for (const t of teams.value) totals[t.id] = 0
-
-  for (const person of persons) {
-    // among teams, pick id with minimal total; tie-breaker by random or by fewer members assigned so far
-    const minTotal = Math.min(...Object.values(totals))
-    const candidateIds = Object.keys(totals).filter(id => totals[id] === minTotal)
-    const pickId = candidateIds[Math.floor(Math.random() * candidateIds.length)] || teams.value[0]?.id
-    const chosenId = pickId || ''
-    if (!chosenId) continue
-    queue.value.push({ person, teamId: chosenId })
-    totals[chosenId] += (Number.isFinite(Number(person.power)) ? Math.max(1, Math.floor(Number(person.power))) : 1)
-  }
+  // Build using extracted utility; rely on canStart to gate invalid states
+  queue.value = makeAssignmentQueue(people.value, teams.value)
 }
 
 // colorTint moved to utils/colors for reuse across app
@@ -282,7 +142,7 @@ function applyStep(idx: number, opts?: { instant?: boolean }): Promise<void> {
     const step = queue.value[idx]
     if (!step) { resolve(); return }
     const team = teamsMap.value[step.teamId]
-    const members = Array.isArray(team.members) ? [...team.members] : []
+          const members = [...team.members]
     // avoid duplicates if re-running
     if (members.includes(step.person.id)) { resolve(); return }
 
@@ -420,7 +280,9 @@ function applyStep(idx: number, opts?: { instant?: boolean }): Promise<void> {
             const teamPalette = Array.from(new Set(teams.value.map(t => t.color).filter(Boolean))) as string[]
             const colors = (teamPalette.length > 0 ? teamPalette : TEAM_COLORS)
             fireBurst({ origin, colors, speed: Number(speed.value) || 1, baseCount: people.value.length * 14 })
-          } catch {}
+          } catch (e) {
+            console.warn('Confetti burst failed at cleanup origin; continuing without confetti', e)
+          }
         }
         finish()
       }
@@ -569,70 +431,26 @@ function setStagingEl(el: HTMLElement | null) {
     </div>
 
 
-    <!-- Integrated queue at the center: first item is the staged/moving source -->
-    <div class="mt-2 flex flex-col items-center justify-center">
-      <!-- Queue anchored so the first (rightmost) item is exactly at the center line -->
-      <div v-if="queue.length > 0" class="relative w-full h-10 select-none">
-        <div class="absolute left-1/2 -translate-x-full">
-          <TransitionGroup name="queue" tag="div" class="flex flex-row-reverse items-center gap-3">
-            <template v-for="(q, qidx) in queue.slice(Math.max(0, currentIdx + 1), Math.max(0, currentIdx + 1) + 3)" :key="q.person.id">
-              <div
-                v-if="qidx === 0"
-                :ref="setStagingEl"
-                class="flex items-center gap-2 rounded-full px-2 py-1 ring-2 ring-blue-500 bg-white/40 transform transition-transform transition-opacity duration-200 scale-100 whitespace-nowrap w-48 md:w-56 shrink-0"
-              >
-                <div class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-200 text-base text-gray-600">?</div>
-                <div class="text-sm font-semibold">{{ q.person.name }}</div>
-              </div>
-              <div v-else class="flex items-center gap-2 rounded-full px-2 py-1 transform transition-transform transition-opacity duration-200 whitespace-nowrap w-48 md:w-56 shrink-0" :class="qidx === 1 ? 'scale-95 opacity-80' : 'scale-90 opacity-70'">
-                <div class="inline-flex h-9 w-9 items-center justify-center rounded-full bg-gray-200 text-base text-gray-600">?</div>
-                <div class="text-sm text-gray-600">{{ q.person.name }}</div>
-              </div>
-            </template>
-          </TransitionGroup>
-        </div>
-      </div>
-    </div>
+    <QueueDisplay :queue="queue" :currentIdx="currentIdx" @setStagingEl="setStagingEl" />
 
     <!-- Teams grid below staging -->
     <div class="mt-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-      <div v-for="t in teams" :key="t.id" class="rounded-xl border overflow-hidden transition-all flex flex-col h-full" :style="{ borderColor: t.color, boxShadow: (highlightTeamId === t.id) ? `0 0 0 4px ${t.color}` : undefined }">
-        <div class="flex items-center justify-between gap-3 p-4" :style="{ backgroundColor: t.color, color: '#fff' }">
-          <h2 class="font-semibold truncate">{{ t.name }}</h2>
-          <div class="text-xs opacity-80">{{ tt('organize_power') || 'power' }}: {{ teamPowerSum(t) }}</div>
-        </div>
-        <div
-          class="p-4 flex-1"
-          @dragover="handleDragOverTeam"
-          @dragenter="handleDragEnterTeam($event, t.id)"
-          @dragleave="handleDragLeaveTeam($event, t.id)"
-          @drop="handleDropTeam($event, t.id)"
-          :style="{
-            backgroundColor: colorTint(t.color, 0.12),
-            outline: (isOverTeam(t.id)) ? `2px dashed ${t.color}` : undefined,
-            outlineOffset: (isOverTeam(t.id)) ? '2px' : undefined
-          }"
-        >
-          <div v-if="(t.members?.length ?? 0) === 0" class="text-sm text-gray-600">{{ tt('organize_awaiting') }}</div>
-          <ul
-            :ref="(el) => setDropArea(t.id, el)"
-            class="flex flex-col gap-2 min-h-[2.25rem] rounded-md"
-          >
-            <li
-              v-for="pid in (t.members || [])"
-              :key="pid"
-              class="flex items-center gap-3 rounded-md px-3 py-2 cursor-move"
-              :style="{ backgroundColor: colorTint(t.color, 0.25) }"
-              draggable="true"
-              @dragstart="handleDragStartMember($event, pid, t.id)"
-              @dragend="handleDragEndMember"
-            >
-              <span class="inline-flex h-7 w-7 items-center justify-center rounded-full bg-gray-200 text-sm text-gray-600">?</span>
-              <span class="text-sm font-medium">{{ (people.find(p => p.id === pid) as any)?.name || tt('unknown') }}</span>
-            </li>
-          </ul>
-        </div>
-      </div>
+      <TeamCard
+        v-for="t in teams"
+        :key="t.id"
+        :team="t"
+        :teamPower="teamPowerSum(t)"
+        :peopleMap="peopleMap"
+        :highlight="highlightTeamId === t.id"
+        :isOver="isOverTeam(t.id)"
+        :setDropArea="setDropArea"
+        :handleDragOverTeam="handleDragOverTeam"
+        :handleDragEnterTeam="(e) => handleDragEnterTeam(e, t.id)"
+        :handleDragLeaveTeam="(e) => handleDragLeaveTeam(e, t.id)"
+        :handleDropTeam="(e) => handleDropTeam(e, t.id)"
+        :handleDragStartMember="(e, pid) => handleDragStartMember(e, pid, t.id)"
+        :handleDragEndMember="handleDragEndMember"
+      />
     </div>
 
 
@@ -644,11 +462,7 @@ function setStagingEl(el: HTMLElement | null) {
           <button v-if="running" @click="pause" class="rounded-md bg-gray-200 px-4 py-2 text-gray-800 hover:bg-gray-300">{{ tt('organize_pause') }}</button>
           <button v-else @click="resume" :disabled="finished || !canStart" class="rounded-md bg-gray-200 px-4 py-2 text-gray-800 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50">{{ tt('organize_resume') }}</button>
           <button @click="resetAll" class="rounded-md border border-gray-300 bg-white px-3 py-2 text-gray-800 hover:bg-gray-50">{{ tt('organize_reset') }}</button>
-          <div class="flex items-center gap-2">
-            <label for="speed" class="text-sm text-gray-700">{{ tt('organize_speed') }}</label>
-            <input id="speed" type="range" min="0.5" max="2" step="0.1" v-model.number="speed" class="h-2 w-40 accent-indigo-600" />
-            <span class="text-xs text-gray-600 tabular-nums">{{ speedText }}</span>
-          </div>
+          <SpeedControl v-model="speed" :label="tt('organize_speed')" :valueText="speedText" />
           <button @click="next" :disabled="finished || !canStart" class="rounded-md bg-emerald-600 px-3 py-2 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50">{{ tt('organize_next') }}</button>
         </div>
       </div>
@@ -672,9 +486,4 @@ function setStagingEl(el: HTMLElement | null) {
   10% { opacity: 1; }
   100% { transform: translate(var(--dx, 0px), var(--dy, 0px)) rotate(var(--rot, 720deg)) scale(0.9); opacity: 0; }
 }
-.queue-enter-active, .queue-leave-active, .queue-move { transition: all 250ms cubic-bezier(0.22, 1, 0.36, 1); }
-.queue-enter-from { opacity: 0; transform: translateX(-12px) scale(0.98); }
-.queue-enter-to { opacity: 1; transform: translateX(0) scale(1); }
-.queue-leave-from { opacity: 1; transform: translateX(0) scale(1); }
-.queue-leave-to { opacity: 0; transform: translateX(12px) scale(0.98); }
 </style>

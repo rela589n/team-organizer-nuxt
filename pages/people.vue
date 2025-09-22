@@ -25,7 +25,7 @@ function updatePerson(id: string, name: string, power: number) {
 
 function removePerson(id: string) {
   const list = people.value
-  const person = Array.isArray(list) ? list.find(p => p.id === id) : undefined
+  const person = list.find(p => p.id === id)
   const label = person && person.name ? ` "${person.name}"` : ''
   const ok = confirm(tt('people_remove_confirm', { label }))
   if (ok) {

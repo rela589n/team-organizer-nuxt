@@ -15,22 +15,20 @@ const STORAGE_KEY = 'team-organizer:people'
 const people = ref<Person[]>([])
 
 /** Normalize unknown input into a well-formed Person. */
-function normalizePerson(input: any): Person {
-  return {
-    id: String(input?.id ?? newId()),
-    name: String(input?.name ?? ''),
-    power: Number.isFinite(Number(input?.power)) ? Math.max(1, Math.floor(Number(input.power))) : 1,
-  }
+function normalizePerson(input: unknown): Person {
+  const obj = (input ?? {}) as Record<string, unknown>
+  const id = typeof obj.id === 'string' && obj.id !== '' ? obj.id : newId()
+  const name = typeof obj.name === 'string' ? obj.name : ''
+  const power = typeof obj.power === 'number' && Number.isFinite(obj.power) ? Math.max(1, Math.floor(obj.power)) : 1
+  return { id, name, power }
 }
 
 export function usePeople() {
   // Load on client
   onMounted(() => {
-    const loaded = loadState<any[]>(STORAGE_KEY, [], 'people')
-    if (Array.isArray(loaded)) {
-      // Be tolerant of legacy records that might contain extra fields
-      people.value = loaded.map(normalizePerson)
-    }
+    const loaded = loadState<unknown[]>(STORAGE_KEY, [], 'people')
+    // Be tolerant of legacy records that might contain extra fields
+    people.value = loaded.map(normalizePerson)
   })
 
   // Persist whenever list changes
@@ -48,7 +46,7 @@ export function usePeople() {
     const provided = name ?? ''
     const finalName = provided === '' ? nextDefaultName() : provided
     const id = newId()
-    const p = Number.isFinite(Number(power)) ? Math.max(1, Math.floor(Number(power))) : 1
+    const p = Number.isFinite(power) ? Math.max(1, Math.floor(power)) : 1
     people.value.push({ id, name: finalName, power: p })
     return id
   }
@@ -57,22 +55,17 @@ export function usePeople() {
     const idx = people.value.findIndex(p => p.id === id)
     if (idx !== -1) {
       const prev = people.value[idx]
-      const p = (power === undefined) ? prev.power : (Number.isFinite(Number(power)) ? Math.max(1, Math.floor(Number(power))) : 1)
+      const p = (power === undefined) ? prev.power : (Number.isFinite(power) ? Math.max(1, Math.floor(power)) : 1)
       people.value[idx] = { id, name, power: p }
     }
   }
 
   function remove(id: string) {
-    // First remove person from the people list
+    // Remove references from all teams first to keep invariants
+    const { removeMemberEverywhere } = useTeams()
+    removeMemberEverywhere(id)
+    // Then remove the person from the people list
     people.value = people.value.filter(p => p.id !== id)
-    // Also remove references from all teams so UI won't show "Unknown"
-    try {
-      const { removeMemberEverywhere } = useTeams()
-      removeMemberEverywhere(id)
-    } catch (e) {
-      // In case useTeams isn't available for some reason, fail silently
-      console.warn('Failed to remove member from teams on person delete:', e)
-    }
   }
 
   return { people, count, add, update, remove }

@@ -31,7 +31,7 @@ const emit = defineEmits<{
           </div>
           <div class="flex items-center gap-6">
             <div class="w-28">
-              <label class="block text-sm font-medium text-gray-700">{{ tt('people_field_power') || 'Power' }}</label>
+              <label class="block text-sm font-medium text-gray-700">{{ tt('people_field_power') }}</label>
               <input :value="p.power" @input="emit('update', p.id, p.name, Number(($event.target as HTMLInputElement).value || 1))" type="number" min="1" step="1" class="mt-1 w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500" />
             </div>
             <button @click="emit('remove', p.id)" :title="tt('teams_remove')" class="rounded-md bg-red-600 px-3 py-1.5 text-sm text-white hover:bg-red-700">{{ tt('teams_remove') }}</button>

@@ -7,7 +7,7 @@ export interface Team {
   id: string
   name: string
   color: string
-  members?: string[] // person ids
+  members: string[] // person ids
 }
 
 const STORAGE_KEY = 'team-organizer:teams'
@@ -16,23 +16,22 @@ const teams = ref<Team[]>([])
 
 /** Normalize an unknown input to a Team, preserving empty color but defaulting
  * null/undefined color to a round-robin color by index for initial data. */
-function normalizeTeam(input: any, idx: number): Team {
-  const id = String(input?.id ?? newId())
-  const name = String(input?.name ?? `Team #${idx + 1}`)
-  const color = (input?.color === undefined || input?.color === null)
+function normalizeTeam(input: unknown, idx: number): Team {
+  const obj = (input ?? {}) as Record<string, unknown>
+  const id = typeof obj.id === 'string' && obj.id !== '' ? obj.id : newId()
+  const name = typeof obj.name === 'string' && obj.name !== '' ? obj.name : `Team #${idx + 1}`
+  const color = (obj.color === undefined || obj.color === null)
     ? TEAM_COLORS[idx % TEAM_COLORS.length]
-    : String(input.color)
-  const members = Array.isArray(input?.members) ? input.members.map(String) : []
+    : String(obj.color)
+  const members = Array.isArray(obj.members) ? obj.members.map(String) : []
   return { id, name, color, members }
 }
 
 export function useTeams() {
   // Load teams from localStorage on client
   onMounted(() => {
-    const loaded = loadState<any[]>(STORAGE_KEY, [], 'teams')
-    if (Array.isArray(loaded)) {
-      teams.value = loaded.map((t, idx) => normalizeTeam(t, idx))
-    }
+    const loaded = loadState<unknown[]>(STORAGE_KEY, [], 'teams')
+    teams.value = loaded.map((t, idx) => normalizeTeam(t, idx))
   })
 
   // Persist teams to localStorage whenever they change
@@ -81,7 +80,7 @@ export function useTeams() {
         ...current,
         ...patch,
         name: patch.name !== undefined ? patch.name : current.name,
-        members: patch.members !== undefined ? [...patch.members] : current.members ?? [],
+        members: patch.members !== undefined ? [...patch.members] : current.members,
       }
       if (patch.color !== undefined) {
         const desired = patch.color
@@ -109,7 +108,7 @@ export function useTeams() {
   function removeMemberEverywhere(personId: string) {
     let changed = false
     teams.value = teams.value.map(t => {
-      const members = Array.isArray(t.members) ? t.members : []
+      const members = t.members
       if (members.includes(personId)) {
         changed = true
         return { ...t, members: members.filter(id => id !== personId) }
@@ -119,5 +118,24 @@ export function useTeams() {
     return changed
   }
 
-  return { teams, count, add, update, remove, clearAllMembers, removeMemberEverywhere, TEAM_COLORS }
+  /** Move a member from one team to another, idempotent on destination. */
+  function moveMemberBetweenTeams(personId: string, fromTeamId: string, toTeamId: string) {
+    if (fromTeamId === toTeamId) return
+    const fromIdx = teams.value.findIndex(t => t.id === fromTeamId)
+    const toIdx = teams.value.findIndex(t => t.id === toTeamId)
+    if (fromIdx === -1) throw new Error(`moveMemberBetweenTeams: fromTeam not found: ${fromTeamId}`)
+    if (toIdx === -1) throw new Error(`moveMemberBetweenTeams: toTeam not found: ${toTeamId}`)
+    const fromTeam = teams.value[fromIdx]
+    const toTeam = teams.value[toIdx]
+    const fromMembers = [...fromTeam.members]
+    const toMembers = [...toTeam.members]
+    const idx = fromMembers.indexOf(personId)
+    if (idx !== -1) fromMembers.splice(idx, 1)
+    if (!toMembers.includes(personId)) toMembers.push(personId)
+    // Persist
+    teams.value[fromIdx] = { ...fromTeam, members: fromMembers }
+    teams.value[toIdx] = { ...toTeam, members: toMembers }
+  }
+
+  return { teams, count, add, update, remove, clearAllMembers, removeMemberEverywhere, moveMemberBetweenTeams, TEAM_COLORS }
 }
